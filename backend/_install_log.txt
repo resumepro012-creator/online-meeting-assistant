@@ -1,2 +1,3 @@
 Playwright not found.
 Attempting to install playwright...
+Installation failed: Command '['D:\\downloads\\ai-online-class-assistant\\backend\\.venv\\Scripts\\python.exe', '-m', 'playwright', 'install', 'chromium']' returned non-zero exit status 1.

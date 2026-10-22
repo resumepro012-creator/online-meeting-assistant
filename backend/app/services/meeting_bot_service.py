@@ -57,27 +57,49 @@ class MeetingBotService:
                             pass
 
                         # Google Meet often has a "Ready to join?" screen.
-                        # The name input might be inside a different container or have different labels.
                         try:
-                            # Try to find name input
+                            # 1. Dismiss initial popups (mic/camera block notices)
+                            for _ in range(3):
+                                dismiss_button = page.locator('button:has-text("Dismiss"), button:has-text("Got it"), button:has-text("Allow"), [aria-label="Close"]')
+                                if await dismiss_button.count() > 0:
+                                    await dismiss_button.first.click()
+                                    logger.info("Dismissed a popup")
+                                    await asyncio.sleep(1)
+                                else:
+                                    break
+                            
+                            # 2. Look for name input
+                            # Sometimes it's a field, sometimes a button first.
                             name_input = page.locator('input[aria-label="Your name"], input[placeholder="Your name"], input[type="text"]')
-                            await name_input.first.wait_for(timeout=15000)
+                            await name_input.first.wait_for(state="visible", timeout=15000)
                             await name_input.first.fill(bot_name)
                             logger.info(f"Filled bot name: {bot_name}")
+                            
+                            # 3. Click "Ask to join" or "Join now"
+                            # We use a broad locator and try multiple times
+                            join_selectors = [
+                                'button:has-text("Ask to join")', 
+                                'button:has-text("Join now")',
+                                '[aria-label="Ask to join"]',
+                                '[aria-label="Join now"]'
+                            ]
+                            
+                            joined = False
+                            for selector in join_selectors:
+                                btn = page.locator(selector)
+                                if await btn.count() > 0:
+                                    await btn.first.click()
+                                    logger.info(f"Clicked join button with selector: {selector}")
+                                    joined = True
+                                    break
+                            
+                            if not joined:
+                                logger.warning("Could not find join button with primary selectors, trying generic button")
+                                await page.click('button:visible') # Last resort: click the first visible button
+                                
                         except Exception as e:
-                            logger.error(f"Could not find name input: {e}")
-                            await page.screenshot(path="bot_error_name.png")
-                            raise
-                        
-                        # Click "Ask to join" or "Join now"
-                        try:
-                            join_button = page.locator('button:has-text("Ask to join"), button:has-text("Join now")')
-                            await join_button.first.wait_for(timeout=5000)
-                            await join_button.first.click()
-                            logger.info("Clicked join button. Bot is knocking on the door...")
-                        except Exception as e:
-                            logger.error(f"Could not find join button: {e}")
-                            await page.screenshot(path="bot_error_join.png")
+                            logger.error(f"Google Meet join flow failed: {e}")
+                            await page.screenshot(path="bot_error_flow.png")
                             raise
                         
                         # Wait to see if we get in
