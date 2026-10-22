@@ -1,0 +1,50 @@
+{
+  "exists": {
+    "backend/app/ml/classifier.py": false,
+    "backend/app/ml/notes.py": false,
+    "backend/app/ml/stt.py": false,
+    "backend/app/ml/pipeline.py": false,
+    "backend/app/ml/extractors.py": false,
+    "backend/app/ml/stages.py": false,
+    "backend/app/api/lectures.py": false,
+    "backend/app/api/auth.py": false,
+    "backend/app/api/deps.py": false,
+    "backend/app/api/classes.py": false,
+    "backend/app/api/health.py": false,
+    "backend/app/schemas/__init__.py": false,
+    "backend/app/db/session.py": false,
+    "backend/app/db/base.py": false,
+    "backend/app/core/ids.py": false,
+    "backend/app/models/course.py": false,
+    "backend/app/services/lecture_service.py": false,
+    "backend/app/services/serializers.py": false,
+    "backend/tests/conftest.py": false,
+    "backend/tests/test_auth_and_access.py": false,
+    "backend/tests/test_lecture_pipeline.py": false,
+    "backend/tests/test_ml_units.py": true,
+    "backend/scripts/smoke_check.py": false,
+    "backend/scripts/evaluate_classifier.py": false,
+    "backend/scripts/seed_demo.py": false
+  },
+  "ml_dir_listing": [
+    "__init__.py",
+    "__pycache__"
+  ],
+  "pycache": [
+    "__init__.cpython-311.pyc",
+    "classifier.cpython-311.pyc",
+    "dates.cpython-311.pyc",
+    "extractors.cpython-311.pyc",
+    "notes.cpython-311.pyc",
+    "pipeline.cpython-311.pyc",
+    "stages.cpython-311.pyc",
+    "stt.cpython-311.pyc",
+    "text_utils.cpython-311.pyc",
+    "transcript_io.cpython-311.pyc",
+    "types.cpython-311.pyc"
+  ],
+  "git_is_repo": "[stderr] fatal: not a git repository (or any of the parent directories): .git",
+  "git_status_short": "\n[stderr] fatal: not a git repository (or any of the parent directories): .git\n",
+  "git_log": "\n[stderr] fatal: not a git repository (or any of the parent directories): .git\n",
+  "git_reflog": "\n[stderr] fatal: not a git repository (or any of the parent directories): .git\n"
+}

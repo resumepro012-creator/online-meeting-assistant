@@ -1,0 +1,9 @@
+﻿EMAIL_BACKEND   = console
+SMTP_HOST       = (not set)
+SMTP_PORT       = 587
+SMTP_USERNAME   = (not set)
+SMTP_USE_STARTTLS = True
+SMTP_FROM_EMAIL = no-reply@localhost
+Sending to      = 23021519-166@uog.edu.pk
+
+Refusing to run: EMAIL_BACKEND is not 'smtp', so no mail would be delivered. Set EMAIL_BACKEND=smtp together with the SMTP_* settings in backend/.env first.

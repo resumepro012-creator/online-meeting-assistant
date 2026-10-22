@@ -1,0 +1,24 @@
+# -----------------------------------------------------------------------------
+# OPTIONAL "real model" dependencies. The backend runs without these, but the
+# transcription + transformer-classifier paths need them.
+#
+#   .venv\Scripts\python.exe -m pip install -r requirements-ml.txt
+#
+# Notes:
+#  - These downloads are large (torch CPU ~200MB+ wheel, whisper models
+#    75MB-1.5GB, transformer checkpoints 250MB-1.6GB). Install only if you
+#    intend to run real speech-to-text / transformer classification.
+#  - Everything here runs on CPU. A GPU is not required.
+#  - Nothing is downloaded at import time: weights are fetched the first time a
+#    model is actually used, then cached locally (see HF_HOME / model cache dir).
+#  - Support for these libraries on Python 3.14 is limited; use Python 3.11.
+# -----------------------------------------------------------------------------
+
+# Speech-to-text. faster-whisper is used instead of openai-whisper because it is
+# faster on CPU, needs no ffmpeg binary for most formats, and is easier to
+# install on Windows.
+faster-whisper==1.1.1
+
+# Transformer-based transcript-segment classification + optional summarization.
+transformers==4.47.1
+torch==2.5.1

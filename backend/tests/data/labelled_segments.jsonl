@@ -1,0 +1,39 @@
+{"text": "Sir, how do we choose the size of the kernel?", "label": "QUESTION"}
+{"text": "Does pooling always improve accuracy?", "label": "QUESTION"}
+{"text": "Will the exam include the pooling discussion?", "label": "QUESTION"}
+{"text": "Can you explain the difference between valid and same padding?", "label": "QUESTION"}
+{"text": "What is the output size if the stride is two?", "label": "QUESTION"}
+{"text": "Are there any questions before we finish?", "label": "QUESTION"}
+{"text": "Could you repeat the formula for the number of parameters?", "label": "QUESTION"}
+{"text": "Is it possible to use pooling with a stride larger than the kernel?", "label": "QUESTION"}
+{"text": "A convolution is defined as a sliding dot product between a small filter and a local patch of the input.", "label": "INFORMATION"}
+{"text": "The filter is also called the kernel, and the output of this operation is called a feature map.", "label": "INFORMATION"}
+{"text": "Stride controls how far the filter moves at each step, and padding preserves the spatial dimensions at the borders.", "label": "INFORMATION"}
+{"text": "Max pooling keeps the strongest activation in a region and discards the rest, which reduces the spatial size.", "label": "INFORMATION"}
+{"text": "The reason we care about parameter sharing is that it reduces the number of weights dramatically compared to a dense layer.", "label": "INFORMATION"}
+{"text": "Early layers learn edges and textures, while deeper layers learn shapes and eventually whole objects.", "label": "INFORMATION"}
+{"text": "Valid padding means no padding at all, so the output shrinks.", "label": "INFORMATION"}
+{"text": "The hidden state is updated at every time step using the same weights.", "label": "INFORMATION"}
+{"text": "Dropout randomly disables a fraction of the units during training to reduce overfitting.", "label": "INFORMATION"}
+{"text": "Batch normalisation rescales the activations of each layer during training.", "label": "INFORMATION"}
+{"text": "Some people argue that pooling throws away information, and recent architectures often replace it with strided convolutions.", "label": "DISCUSSION"}
+{"text": "Let us discuss the trade-off, because it matters for your assignment design.", "label": "DISCUSSION"}
+{"text": "On the one hand, pooling gives translation invariance and cuts computation.", "label": "DISCUSSION"}
+{"text": "On the other hand, it loses precise location information.", "label": "DISCUSSION"}
+{"text": "What do you think about using global average pooling instead of a fully connected head?", "label": "DISCUSSION"}
+{"text": "In my opinion the deeper model is harder to train without skip connections.", "label": "DISCUSSION"}
+{"text": "Any thoughts on the comparison between LSTMs and transformers for this task?", "label": "DISCUSSION"}
+{"text": "We have decided that this semester we will use strided convolutions instead of pooling in the final project.", "label": "DECISION"}
+{"text": "The final decision about the project dataset will be announced on the course page by Friday.", "label": "DECISION"}
+{"text": "We agreed to keep the batch size at thirty two for all the experiments.", "label": "DECISION"}
+{"text": "Let us go with the smaller architecture because the training set is limited.", "label": "DECISION"}
+{"text": "It is settled that the midterm will be an open book exam.", "label": "DECISION"}
+{"text": "We will use the same preprocessing pipeline for both the training and the test data.", "label": "DECISION"}
+{"text": "Please note that the assignment deadline is September 23, and you must submit a working notebook.", "label": "ACTION_ITEM"}
+{"text": "Assignment 3 covers kernel size selection, stride arithmetic and pooling; submit it before 23rd September.", "label": "ACTION_ITEM"}
+{"text": "Remember to include a one page write up explaining your design choices.", "label": "ACTION_ITEM"}
+{"text": "You should read chapter seven of the textbook before the next session, and prepare two questions per group.", "label": "ACTION_ITEM"}
+{"text": "Please upload your notebook to the portal, and make sure the file name contains your roll number.", "label": "ACTION_ITEM"}
+{"text": "Revise the output size formula before the next class.", "label": "ACTION_ITEM"}
+{"text": "All students should complete the lab exercise by Friday afternoon.", "label": "ACTION_ITEM"}
+{"text": "Make sure your environment is installed before the lab session.", "label": "ACTION_ITEM"}

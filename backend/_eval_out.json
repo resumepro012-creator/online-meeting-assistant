@@ -1,0 +1,60 @@
+{
+  "method": "baseline-pattern-v1",
+  "data": "labelled_segments.jsonl",
+  "caveat": "small hand-authored dev set, not a benchmark",
+  "total": 39,
+  "correct": 36,
+  "accuracy": 0.9230769230769231,
+  "macro_f1": 0.9137085137085137,
+  "per_class": {
+    "QUESTION": {
+      "precision": 0.8,
+      "recall": 1.0,
+      "f1": 0.888888888888889,
+      "support": 8
+    },
+    "INFORMATION": {
+      "precision": 0.9090909090909091,
+      "recall": 1.0,
+      "f1": 0.9523809523809523,
+      "support": 10
+    },
+    "DISCUSSION": {
+      "precision": 1.0,
+      "recall": 0.5714285714285714,
+      "f1": 0.7272727272727273,
+      "support": 7
+    },
+    "DECISION": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "support": 6
+    },
+    "ACTION_ITEM": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "support": 8
+    }
+  },
+  "confusion": {
+    "QUESTION": {
+      "QUESTION": 8
+    },
+    "INFORMATION": {
+      "INFORMATION": 10
+    },
+    "DISCUSSION": {
+      "DISCUSSION": 4,
+      "INFORMATION": 1,
+      "QUESTION": 2
+    },
+    "DECISION": {
+      "DECISION": 6
+    },
+    "ACTION_ITEM": {
+      "ACTION_ITEM": 8
+    }
+  }
+}
