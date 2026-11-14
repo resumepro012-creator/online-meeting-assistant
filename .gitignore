@@ -19,3 +19,9 @@ backend/data/
 
 # OS
 .DS_Store
+
+# Local Python environment
+.venv/
+
+# Generated TypeScript build files
+*.tsbuildinfo
