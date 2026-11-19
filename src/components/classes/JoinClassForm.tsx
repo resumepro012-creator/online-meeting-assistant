@@ -295,5 +295,3 @@ export function JoinClassForm({ onJoin, isSubmitting }: JoinClassFormProps) {
     </Card>
   )
 }
-
-
