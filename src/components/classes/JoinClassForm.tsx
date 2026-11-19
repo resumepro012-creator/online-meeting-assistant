@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect, type FormEvent } from 'react'
+﻿import { useRef, useState, useEffect, type FormEvent } from 'react'
 import { Video, Link2, BookMarked, Upload, FileAudio, X, Info, ShieldAlert, Mic, StopCircle } from 'lucide-react'
 import { Input } from '@/components/common/Input'
 import { Button } from '@/components/common/Button'
@@ -25,31 +25,45 @@ export function JoinClassForm({ onJoin, isSubmitting }: JoinClassFormProps) {
 
   useEffect(() => {
     liveServiceRef.current = new LiveAudioService(setLiveState)
-    return () => liveServiceRef.current?.stop()
+
+    return () => {
+      void liveServiceRef.current?.stop()
+    }
   }, [])
 
   const handleStartLive = async () => {
     try {
       setErrors((prev) => ({ ...prev, session: '' }))
-      if (policy?.automatedJoinSupported && meetingLink) {
-        await classService.joinMeetingAsBot(meetingLink)
-        setLiveState({ status: 'recording', durationSeconds: 0 })
-      } else {
-        await liveServiceRef.current?.start()
-      }
+      setFile(null)
+      await liveServiceRef.current?.start()
     } catch (err) {
       console.error('Live capture failed:', err)
-      const message = err instanceof Error ? err.message : 'Could not start live capture'
-      setLiveState({ status: 'error', durationSeconds: 0, error: message })
+      const message =
+        err instanceof Error ? err.message : 'Could not start live capture'
+
+      setLiveState({
+        status: 'error',
+        durationSeconds: 0,
+        error: message,
+      })
     }
   }
 
-  const handleStopLive = () => {
-    liveServiceRef.current?.stop()
-    const recordedFile = liveServiceRef.current?.getFile(`live_${Date.now()}.webm`)
-    if (recordedFile) {
-      setFile(recordedFile)
+  const handleStopLive = async () => {
+    const recordedFile = await liveServiceRef.current?.stop(
+      `live_${Date.now()}.webm`,
+    )
+
+    if (!recordedFile) {
+      setErrors((prev) => ({
+        ...prev,
+        session: 'No audio was captured. Make sure "Share tab audio" was enabled.',
+      }))
+      return null
     }
+
+    setFile(recordedFile)
+    return recordedFile
   }
 
   const validate = () => {
@@ -76,20 +90,42 @@ export function JoinClassForm({ onJoin, isSubmitting }: JoinClassFormProps) {
     }
   }
 
-  const handleSubmit = (e: FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
+
     if (liveState.status === 'recording') {
-      handleStopLive()
-      // The file won't be in state yet because setState is async,
-      // but we can pass it directly if we stop it here.
-      const recordedFile = liveServiceRef.current?.getFile(`live_${Date.now()}.webm`)
-      if (recordedFile && title.trim() && subject.trim()) {
-        onJoin({ title, subject, meetingLink, file: recordedFile })
+      if (!title.trim()) {
+        setErrors({ title: 'Class title is required.' })
+        return
       }
+
+      if (!subject.trim()) {
+        setErrors({ subject: 'Subject is required.' })
+        return
+      }
+
+      const recordedFile = await handleStopLive()
+
+      if (recordedFile) {
+        onJoin({
+          title,
+          subject,
+          meetingLink,
+          file: recordedFile,
+        })
+      }
+
       return
     }
+
     if (!validate()) return
-    onJoin({ title, subject, meetingLink, file })
+
+    onJoin({
+      title,
+      subject,
+      meetingLink,
+      file,
+    })
   }
 
   const formatDuration = (seconds: number) => {
@@ -136,10 +172,8 @@ export function JoinClassForm({ onJoin, isSubmitting }: JoinClassFormProps) {
               {policy.platformName}
             </p>
             <p className="mt-1.5 text-muted">
-              Assistant ready to capture live.
-              {policy.automatedJoinSupported
-                ? ' This platform can be joined automatically.'
-                : ' Join the meeting in your browser, then click "Start Live Capture" and select the meeting tab.'}
+              Open the meeting in your browser, then click "Start Live Capture"
+              and select the meeting tab.
             </p>
             {policy.accessControls.length > 0 && (
               <ul className="mt-2 list-disc space-y-0.5 pl-4 text-muted">
@@ -163,7 +197,7 @@ export function JoinClassForm({ onJoin, isSubmitting }: JoinClassFormProps) {
         <div className="grid grid-cols-2 gap-4">
             <div>
               <p className="mb-1.5 text-sm font-medium text-white/85">
-                {policy?.automatedJoinSupported ? 'Assistant Bot' : 'Live Capture'}
+                Live Capture
               </p>
               {liveState.status === 'recording' ? (
                 <div className="flex flex-col items-center gap-2 rounded-xl border border-primary/50 bg-primary/10 px-4 py-6 text-center">
@@ -172,26 +206,26 @@ export function JoinClassForm({ onJoin, isSubmitting }: JoinClassFormProps) {
                     <span className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-red-500" />
                   </div>
                   <span className="text-sm font-medium text-white">
-                    {policy?.automatedJoinSupported ? 'Bot in Meeting' : `Recording: ${formatDuration(liveState.durationSeconds)}`}
+                    {`Recording: ${formatDuration(liveState.durationSeconds)}`}
                   </span>
                   <button
                     type="button"
                     onClick={handleStopLive}
                     className="mt-1 text-xs text-primary underline underline-offset-2 hover:text-primary/80"
                   >
-                    {policy?.automatedJoinSupported ? 'Stop Bot' : 'Stop & Use Recording'}
+                    Stop & Use Recording
                   </button>
                 </div>
               ) : (
                 <button
                   type="button"
                   onClick={handleStartLive}
-                  disabled={liveState.status === 'recording'}
+                  disabled={false}
                   className="flex w-full flex-col items-center gap-2 rounded-xl border border-dashed border-card-border bg-card/40 px-4 py-6 text-center transition-colors hover:border-primary/50 disabled:opacity-50"
                 >
                   <Mic className="h-5 w-5 text-muted" />
                   <span className="text-sm text-muted">
-                    {policy?.automatedJoinSupported ? 'Join as Assistant' : 'Start Live Capture'}
+                    Start Live Capture
                   </span>
                 </button>
               )}
@@ -243,8 +277,8 @@ export function JoinClassForm({ onJoin, isSubmitting }: JoinClassFormProps) {
           <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
           <p>
             {liveState.status === 'recording'
-              ? 'Assistant is capturing audio from your selected tab. Do not close the meeting tab or the assistant during capture.'
-              : 'You can now capture live Google Meet, Zoom or Teams meetings! Click "Start Live Capture" and select the meeting tab. Make sure to check "Share tab audio".'}
+              ? 'Audio is being captured from your selected meeting tab. Do not close the meeting tab while recording.'
+              : 'Open your meeting first, then click "Start Live Capture", select the meeting tab, and enable "Share tab audio".'}
           </p>
         </div>
 
@@ -261,4 +295,3 @@ export function JoinClassForm({ onJoin, isSubmitting }: JoinClassFormProps) {
     </Card>
   )
 }
-

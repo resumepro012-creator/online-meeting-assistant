@@ -19,3 +19,23 @@ backend/data/
 
 # OS
 .DS_Store
+
+# Local Python environment
+.venv/
+
+# Generated TypeScript build files
+*.tsbuildinfo
+
+# Temporary meeting bot browser profiles
+backend/.bot_*_profile/
+
+# Backup files
+*.backup
+*.bak
+
+# Temporary meeting bot test artifacts
+backend/bot_initial.png
+backend/bot_error_flow.png
+backend/playwright_test.png
+backend/screenshot_test.txt
+backend/meeting_bot_diff.txt

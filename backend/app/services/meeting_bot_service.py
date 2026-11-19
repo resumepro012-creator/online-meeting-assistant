@@ -1,5 +1,7 @@
-import asyncio
+﻿import asyncio
 import logging
+import os
+
 try:
     from playwright.async_api import async_playwright
     PLAYWRIGHT_AVAILABLE = True
@@ -7,145 +9,153 @@ except ImportError:
     PLAYWRIGHT_AVAILABLE = False
     async_playwright = None
 
-from app.core.config import settings
-
 logger = logging.getLogger(__name__)
+
+CDP_ENDPOINT = os.getenv(
+    "MEET_CDP_ENDPOINT",
+    "http://127.0.0.1:9223"
+)
+
 
 class MeetingBotService:
     def __init__(self):
         self.active_bots = {}
 
-    async def join_meeting(self, meeting_link: str, bot_name: str = "AI Class Assistant"):
-        """
-        Launches a headless browser to join the meeting as a guest bot.
-        """
+    async def join_meeting(
+        self,
+        meeting_link: str,
+        bot_name: str = "AI Class Assistant"
+    ):
         if not PLAYWRIGHT_AVAILABLE:
-            logger.error("Playwright not installed. Bot cannot join.")
+            logger.error("Playwright is not installed.")
             return None
 
         bot_id = f"bot_{hash(meeting_link)}"
-        
+
+        if bot_id in self.active_bots:
+            logger.warning("Bot already active for this meeting.")
+            return bot_id
+
         async def run_bot():
-            async with async_playwright() as p:
-                # Launch browser with mic/camera permissions granted
-                browser = await p.chromium.launch(headless=True)
-                context = await browser.new_context(
-                    permissions=["microphone", "camera"],
-                    user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-                )
-                
-                page = await context.new_page()
-                
-                try:
-                    logger.info(f"Bot joining meeting: {meeting_link}")
-                    await page.goto(meeting_link)
-                    
-                    # Debug: Take screenshot of the initial page
-                    await page.screenshot(path="bot_initial.png")
-                    
-                    # Google Meet Logic
-                    if "meet.google.com" in meeting_link:
-                        # Sometimes there are "Dismiss" buttons for mic/camera block notices
-                        try:
-                            # Wait a bit for popups
-                            await asyncio.sleep(2)
-                            dismiss_button = page.locator('button:has-text("Dismiss"), button:has-text("Got it"), button:has-text("Allow")')
-                            if await dismiss_button.count() > 0:
-                                await dismiss_button.first.click()
-                                logger.info("Dismissed a popup")
-                        except:
-                            pass
+            page = None
 
-                        # Google Meet often has a "Ready to join?" screen.
-                        try:
-                            # 1. Dismiss initial popups (mic/camera block notices)
-                            for _ in range(3):
-                                dismiss_button = page.locator('button:has-text("Dismiss"), button:has-text("Got it"), button:has-text("Allow"), [aria-label="Close"]')
-                                if await dismiss_button.count() > 0:
-                                    await dismiss_button.first.click()
-                                    logger.info("Dismissed a popup")
-                                    await asyncio.sleep(1)
-                                else:
-                                    break
-                            
-                            # 2. Look for name input
-                            # Sometimes it's a field, sometimes a button first.
-                            name_input = page.locator('input[aria-label="Your name"], input[placeholder="Your name"], input[type="text"]')
-                            await name_input.first.wait_for(state="visible", timeout=15000)
-                            await name_input.first.fill(bot_name)
-                            logger.info(f"Filled bot name: {bot_name}")
-                            
-                            # 3. Click "Ask to join" or "Join now"
-                            # We use a broad locator and try multiple times
-                            join_selectors = [
-                                'button:has-text("Ask to join")', 
-                                'button:has-text("Join now")',
-                                '[aria-label="Ask to join"]',
-                                '[aria-label="Join now"]'
-                            ]
-                            
-                            joined = False
-                            for selector in join_selectors:
-                                btn = page.locator(selector)
-                                if await btn.count() > 0:
-                                    await btn.first.click()
-                                    logger.info(f"Clicked join button with selector: {selector}")
-                                    joined = True
-                                    break
-                            
-                            if not joined:
-                                logger.warning("Could not find join button with primary selectors, trying generic button")
-                                await page.click('button:visible') # Last resort: click the first visible button
-                                
-                        except Exception as e:
-                            logger.error(f"Google Meet join flow failed: {e}")
-                            await page.screenshot(path="bot_error_flow.png")
-                            raise
-                        
-                        # Wait to see if we get in
-                        await asyncio.sleep(5)
-                        await page.screenshot(path="bot_after_knock.png")
-                        
-                        # Once admitted, start recording inside the browser
-                        # We use a small script to record audio from the page
-                        await page.evaluate("""
-                            window.recorder = null;
-                            window.chunks = [];
-                            async function startRecording() {
-                                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                                window.recorder = new MediaRecorder(stream);
-                                window.recorder.ondataavailable = (e) => window.chunks.push(e.data);
-                                window.recorder.start();
-                            }
-                            startRecording();
-                        """)
+            try:
+                async with async_playwright() as p:
+                    logger.info("Connecting to guest Chrome: %s", CDP_ENDPOINT)
 
-                        # Keep the page open to stay in the meeting
-                        while bot_id in self.active_bots:
-                            await asyncio.sleep(5)
-                        
-                        # Stop recording and get the data
-                        # Note: In a real app, we'd stream this or save it to a file
-                        logger.info("Bot leaving meeting and saving recording...")
-                    
-                except Exception as e:
-                    logger.error(f"Bot failed to join: {e}")
-                finally:
-                    await browser.close()
-                    if bot_id in self.active_bots:
-                        del self.active_bots[bot_id]
+                    browser = await p.chromium.connect_over_cdp(
+                        CDP_ENDPOINT
+                    )
 
-        # Run in background
+                    if not browser.contexts:
+                        raise RuntimeError(
+                            "No Chrome browser context available."
+                        )
+
+                    context = browser.contexts[0]
+                    page = await context.new_page()
+
+                    logger.info("Opening meeting: %s", meeting_link)
+                    await page.goto(
+                        meeting_link,
+                        wait_until="domcontentloaded"
+                    )
+
+                    guest_button = page.get_by_role(
+                        "button",
+                        name="Continue as guest"
+                    )
+
+                    await guest_button.wait_for(
+                        state="visible",
+                        timeout=30000
+                    )
+
+                    await guest_button.click()
+                    logger.info("Continue as guest clicked.")
+
+                    name_field = page.get_by_placeholder(
+                        "Enter your name"
+                    )
+
+                    await name_field.wait_for(
+                        state="visible",
+                        timeout=30000
+                    )
+
+                    await name_field.fill(bot_name)
+                    logger.info("Guest name filled: %s", bot_name)
+
+                    ask_button = page.get_by_role(
+                        "button",
+                        name="Ask to join"
+                    )
+
+                    await ask_button.wait_for(
+                        state="visible",
+                        timeout=15000
+                    )
+
+                    if not await ask_button.is_enabled():
+                        raise RuntimeError(
+                            "Ask to join button is disabled."
+                        )
+
+                    logger.info(
+                        "READY: Click Ask to join manually in guest Chrome."
+                    )
+
+                    joined_logged = False
+
+                    while bot_id in self.active_bots:
+                        if page.is_closed():
+                            logger.warning("Guest Chrome tab was closed.")
+                            break
+
+                        body_text = await page.locator("body").inner_text()
+
+                        if (
+                            "You have joined the call" in body_text
+                            or await page.get_by_role(
+                                "button",
+                                name="Leave call"
+                            ).count() > 0
+                        ):
+                            if not joined_logged:
+                                logger.info(
+                                    "Guest successfully joined the meeting."
+                                )
+                                joined_logged = True
+
+                        await asyncio.sleep(2)
+
+            except Exception:
+                logger.exception("Meeting bot failed.")
+
+            finally:
+                # Close only the bot's own tab.
+                # Never close the externally managed Chrome browser.
+                if page is not None:
+                    try:
+                        if not page.is_closed():
+                            await page.close()
+                    except Exception:
+                        logger.exception("Could not close bot tab.")
+
+                self.active_bots.pop(bot_id, None)
+                logger.info("Meeting bot stopped: %s", bot_id)
+
         task = asyncio.create_task(run_bot())
         self.active_bots[bot_id] = task
+
         return bot_id
 
     async def stop_bot(self, bot_id: str):
         if bot_id in self.active_bots:
-            # The loop in run_bot will exit when bot_id is removed
             del self.active_bots[bot_id]
             return True
+
         return False
 
-# Global instance
+
 meeting_bot = MeetingBotService()
