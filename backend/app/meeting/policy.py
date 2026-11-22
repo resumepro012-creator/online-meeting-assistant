@@ -9,13 +9,15 @@ Two different things are deliberately kept apart:
    the meeting platform (Google Meet, Zoom, Teams, Webex …) and by the meeting
    host, not by this application.
 
-This project therefore **never** tries to enter a meeting on the student's
-behalf. It does not bypass waiting rooms, domain restrictions, host approval,
-lobby checks, passcodes or any other access control, and it does not record a
-meeting without consent. Instead it tells the student plainly what the platform
-allows and points at the permitted alternative: join the meeting yourself with
-your official university account, then hand the assistant an authorized
-recording or transcript.
+On platforms where an official, host-controlled path exists (currently Google
+Meet), the assistant bot may open the meeting in its own browser and *ask* to
+join on the student's behalf — the host still has to admit it. It never
+bypasses waiting rooms, domain restrictions, host approval, lobby checks,
+passcodes or any other access control, and it never records a meeting without
+consent. For every other platform it tells the student plainly what the
+platform allows and points at the permitted alternative: join the meeting
+yourself with your official university account, then hand the assistant an
+authorized recording or transcript.
 
 Nothing here performs network calls — it is a policy/detection module only.
 """

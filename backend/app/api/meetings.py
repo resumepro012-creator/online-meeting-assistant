@@ -1,4 +1,4 @@
-﻿"""Meeting access, guest joining, and audio recording endpoints."""
+"""Meeting access, guest joining, and audio recording endpoints."""
 
 from __future__ import annotations
 
@@ -17,10 +17,16 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user
 from app.core.config import settings
 from app.db.session import get_db
-from app.meeting.policy import assess_link, supported_platforms
+from app.meeting.policy import assess_link, detect_platform, supported_platforms
 from app.ml.stt import UnsupportedAudioError, validate_upload
 from app.models import User
-from app.schemas import MeetingPolicyOut, MessageResponse, LectureCreatedOut
+from app.schemas import (
+    BotJoinOut,
+    BotStatusOut,
+    LectureCreatedOut,
+    MeetingPolicyOut,
+    MessageResponse,
+)
 from app.services import course_service, lecture_service
 from app.services.audio_capture_service import (
     audio_capture_service,
@@ -31,20 +37,66 @@ from app.services.meeting_bot_service import meeting_bot
 router = APIRouter(prefix="/meetings", tags=["meetings"])
 
 
-@router.post("/join", response_model=MessageResponse)
+@router.post("/join", response_model=BotJoinOut)
 async def join_meeting(
     link: str,
-    background_tasks: BackgroundTasks,
     user: User = Depends(get_current_user),
-):
-    """Start the guest bot. The host must admit it."""
-    background_tasks.add_task(
-        meeting_bot.join_meeting,
-        link,
-        f"Assistant ({user.name})",
+) -> BotJoinOut:
+    """Start the assistant bot, which requests admission from the host.
+
+    The bot is launched in a real Chrome window and clicks "Ask to join"; the
+    host still has to admit it. Poll `GET /meetings/bot/status` for the outcome.
+    """
+    platform = detect_platform(link)
+
+    if not platform.automated_join_supported:
+        return BotJoinOut(
+            bot_id=None,
+            status="unsupported",
+            detail=(
+                f"Automated joining is not supported for {platform.name}. "
+                "Join the meeting yourself with your institute account, then "
+                "upload the authorized recording or use live capture."
+            ),
+        )
+
+    bot_id = await meeting_bot.join_meeting(link, f"Assistant ({user.name})")
+    return BotJoinOut(
+        bot_id=bot_id,
+        status="starting",
+        detail="Opening the assistant browser. Please watch for the Chrome window.",
     )
+
+
+@router.get("/bot/status", response_model=BotStatusOut)
+def bot_status(
+    link: str = Query(..., description="The meeting link the bot is joining."),
+    _user: User = Depends(get_current_user),
+) -> BotStatusOut:
+    """Live state of the assistant bot for a meeting link."""
+    status = meeting_bot.status_for_link(link)
+    if status is None:
+        return BotStatusOut(found=False)
+    return BotStatusOut(
+        found=True,
+        bot_id=status.get("botId"),
+        link=status.get("link"),
+        status=status.get("status"),
+        detail=status.get("detail"),
+        started_at=status.get("startedAt"),
+        updated_at=status.get("updatedAt"),
+    )
+
+
+@router.post("/bot/stop", response_model=MessageResponse)
+async def stop_bot(
+    link: str,
+    _user: User = Depends(get_current_user),
+) -> MessageResponse:
+    """Make the assistant bot leave the meeting and close its browser window."""
+    stopped = await meeting_bot.stop_bot(meeting_bot.bot_id_for_link(link))
     return MessageResponse(
-        message="Assistant Bot is joining the meeting. Please admit it from the waiting room."
+        message="Assistant left the meeting." if stopped else "No active assistant for this meeting."
     )
 
 

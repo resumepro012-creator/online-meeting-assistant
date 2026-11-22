@@ -160,6 +160,33 @@ class MeetingPolicyOut(CamelModel):
 
 
 # --------------------------------------------------------------------------- #
+# Meeting assistant bot
+# --------------------------------------------------------------------------- #
+class BotJoinOut(CamelModel):
+    """Result of asking the assistant bot to join a meeting.
+
+    `bot_id` is None when the platform does not support automated joining, in
+    which case `status` is `unsupported` and `detail` explains the alternative.
+    """
+
+    bot_id: str | None = None
+    status: str
+    detail: str = ""
+
+
+class BotStatusOut(CamelModel):
+    """Live state of the assistant bot for a given meeting link."""
+
+    found: bool = False
+    bot_id: str | None = None
+    link: str | None = None
+    status: str | None = None
+    detail: str | None = None
+    started_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+# --------------------------------------------------------------------------- #
 # Courses / classes
 # --------------------------------------------------------------------------- #
 class CourseCreateRequest(CamelModel):

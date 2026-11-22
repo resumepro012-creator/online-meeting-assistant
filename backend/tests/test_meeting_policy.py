@@ -16,7 +16,7 @@ def test_policy_endpoint_requires_a_verified_account(client: TestClient) -> None
     assert client.get("/api/meetings/policy").status_code == 401
 
 
-def test_google_meet_link_is_reported_as_not_auto_joinable(
+def test_google_meet_supports_assistant_admission(
     client: TestClient, new_user: dict
 ) -> None:
     response = client.get(
@@ -33,8 +33,9 @@ def test_google_meet_link_is_reported_as_not_auto_joinable(
     # Application sign-in and meeting authorization are stated separately.
     assert body["applicationAuthenticationRequired"] is True
     assert body["meetingAuthorizationRequired"] is True
-    assert body["automatedJoinSupported"] is False
-    assert body["liveCaptureImplemented"] is False
+    # The assistant bot may ask to join, but the host still admits it.
+    assert body["automatedJoinSupported"] is True
+    assert body["liveCaptureImplemented"] is True
     assert body["accessControls"], "the platform's access controls must be listed"
     assert body["permittedAlternative"]
     assert body["policy"] == NEVER_BYPASS_STATEMENT
@@ -80,10 +81,10 @@ def test_platform_detection_accepts_schemeless_links() -> None:
     assert detect_platform(None).key == "unknown"
 
 
-def test_no_platform_claims_automated_join_support() -> None:
-    """Guards against a future change quietly re-enabling meeting automation."""
+def test_only_google_meet_claims_assistant_join_support() -> None:
+    """Only the platform the assistant bot actually drives is marked auto-joinable."""
+    assert detect_platform("https://meet.google.com/x").automated_join_supported is True
     for link in (
-        "https://meet.google.com/x",
         "https://zoom.us/j/1",
         "https://teams.microsoft.com/l/meetup-join/1",
         "https://university.webex.com/meet/x",

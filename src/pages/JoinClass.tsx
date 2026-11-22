@@ -16,7 +16,10 @@ export default function JoinClass() {
   const [session, setSession] = useState<ClassSession | null>(null)
   const [lectureId, setLectureId] = useState<string | null>(null)
   const [hasAudio, setHasAudio] = useState(false)
+  const [recordingStarted, setRecordingStarted] = useState(false)
+  const [meetingLink, setMeetingLink] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [isEnding, setIsEnding] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [confirmEnd, setConfirmEnd] = useState(false)
   const [elapsed, setElapsed] = useState(0)
@@ -42,12 +45,15 @@ export default function JoinClass() {
     setIsSubmitting(true)
     setError(null)
     try {
-      // Creates the class and uploads the recording. The backend queues the
-      // processing job and hands back the lecture id the Processing page polls.
+      // Creates the class and either uploads the recording or starts capturing
+      // the meeting's audio. The backend hands back the lecture id the
+      // Processing page polls (null until the class is ended when recording).
       const started = await classService.startSession({ title, subject, meetingLink, file })
       setSession(started.session)
       setLectureId(started.lectureId)
       setHasAudio(!!file)
+      setRecordingStarted(started.recordingStarted)
+      setMeetingLink(meetingLink.trim() || null)
       setElapsed(0)
 
       timerRef.current = setInterval(() => setElapsed((e) => e + 1), 1000)
@@ -62,10 +68,47 @@ export default function JoinClass() {
     }
   }
 
-  const handleEndClass = () => {
+  const handleEndClass = async () => {
     if (timerRef.current) clearInterval(timerRef.current)
-    if (session) {
-      navigate(`/processing/${session.id}`, { state: { session, lectureId } })
+    if (!session) return
+
+    setIsEnding(true)
+    setError(null)
+    try {
+      // Make the assistant leave the meeting first.
+      if (meetingLink) {
+        try {
+          await classService.stopMeetingBot(meetingLink)
+        } catch {
+          // The bot may already be gone — that must not block generating notes.
+        }
+      }
+
+      // When no file was uploaded, the lecture is built from the audio the
+      // assistant recorded while the class was running.
+      let finalLectureId = lectureId
+      if (!finalLectureId && recordingStarted) {
+        const stopped = await classService.stopMeetingRecording()
+        finalLectureId = stopped.lectureId
+      }
+
+      if (!finalLectureId) {
+        setError(
+          'No recording was captured for this class, so there is nothing to process. ' +
+            'Start a session and upload an audio file/transcript or use live capture.'
+        )
+        setIsEnding(false)
+        return
+      }
+
+      navigate(`/processing/${session.id}`, { state: { session, lectureId: finalLectureId } })
+    } catch (e) {
+      setError(
+        e instanceof classService.ApiError
+          ? e.message
+          : 'Could not finish this class session. Please try again.'
+      )
+      setIsEnding(false)
     }
   }
 
@@ -109,7 +152,9 @@ export default function JoinClass() {
             <p className="mt-6 font-mono text-sm text-cyan">
               {hasAudio
                 ? 'Recording ready — AI will process it when you end the session.'
-                : 'No audio uploaded — live meeting capture is not available yet.'}
+                : recordingStarted
+                  ? 'The assistant is recording this class — AI will turn it into notes when you end the session.'
+                  : 'No recording attached — the assistant can keep the session open while you capture the meeting.'}
             </p>
 
             <div className="mx-auto mt-6 grid max-w-sm grid-cols-2 gap-3 text-left">
@@ -126,11 +171,20 @@ export default function JoinClass() {
                   {hasAudio ? <FileAudio className="h-3.5 w-3.5" /> : <Mic className="h-3.5 w-3.5" />}
                   Audio Source
                 </p>
-                <p className="mt-1 text-sm text-white">{hasAudio ? 'Uploaded file' : 'None'}</p>
+                <p className="mt-1 text-sm text-white">
+                  {hasAudio ? 'Uploaded file' : recordingStarted ? 'Assistant recording' : 'None'}
+                </p>
               </div>
             </div>
 
-            <Button variant="danger" size="lg" className="mt-8" onClick={() => setConfirmEnd(true)}>
+            <Button
+              variant="danger"
+              size="lg"
+              className="mt-8"
+              isLoading={isEnding}
+              disabled={isEnding}
+              onClick={() => setConfirmEnd(true)}
+            >
               <Square className="h-4 w-4" />
               End Class
             </Button>

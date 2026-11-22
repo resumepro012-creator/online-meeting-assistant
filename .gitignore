@@ -39,3 +39,8 @@ backend/bot_error_flow.png
 backend/playwright_test.png
 backend/screenshot_test.txt
 backend/meeting_bot_diff.txt
+
+# Local scratch / debug artifacts (logs, check files)
+_*.log
+backend/_*.log
+backend/_*.txt

@@ -1,15 +1,40 @@
-﻿import { useRef, useState, useEffect, type FormEvent } from 'react'
-import { Video, Link2, BookMarked, Upload, FileAudio, X, Info, ShieldAlert, Mic, StopCircle } from 'lucide-react'
+import { useRef, useState, useEffect, type FormEvent } from 'react'
+import { Video, Link2, BookMarked, Upload, FileAudio, X, Info, ShieldAlert, Mic, StopCircle, Bot } from 'lucide-react'
 import { Input } from '@/components/common/Input'
 import { Button } from '@/components/common/Button'
 import { Card } from '@/components/common/Card'
+import { cn } from '@/lib/utils'
 import * as classService from '@/services/classService'
-import type { MeetingPolicy } from '@/services/classService'
+import type { MeetingPolicy, BotStatus } from '@/services/classService'
 import { LiveAudioService, type LiveAudioState } from '@/services/LiveAudioService'
 
 interface JoinClassFormProps {
   onJoin: (data: { title: string; subject: string; meetingLink: string; file: File | null }) => void
   isSubmitting: boolean
+}
+
+const BOT_TERMINAL_STATUSES = ['admitted', 'failed', 'stopped', 'unsupported']
+
+function describeBotStatus(status: string | null): { label: string; tone: string } {
+  switch (status) {
+    case 'starting':
+    case 'opening':
+      return { label: 'Opening the meeting…', tone: 'text-cyan' }
+    case 'action_required':
+      return { label: 'Action needed in the assistant window', tone: 'text-amber-300' }
+    case 'requesting_admission':
+      return { label: 'Requesting permission to enter…', tone: 'text-amber-300' }
+    case 'waiting_for_host':
+      return { label: 'Waiting for the host to admit the assistant…', tone: 'text-amber-300' }
+    case 'admitted':
+      return { label: 'Assistant admitted to the meeting', tone: 'text-emerald-400' }
+    case 'failed':
+      return { label: 'Assistant could not join', tone: 'text-red-400' }
+    case 'stopped':
+      return { label: 'Assistant left the meeting', tone: 'text-muted' }
+    default:
+      return { label: 'Assistant is working…', tone: 'text-muted' }
+  }
 }
 
 export function JoinClassForm({ onJoin, isSubmitting }: JoinClassFormProps) {
@@ -20,16 +45,100 @@ export function JoinClassForm({ onJoin, isSubmitting }: JoinClassFormProps) {
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [policy, setPolicy] = useState<MeetingPolicy | null>(null)
   const [liveState, setLiveState] = useState<LiveAudioState>({ status: 'idle', durationSeconds: 0 })
+  const [botStatus, setBotStatus] = useState<BotStatus | null>(null)
+  const [botBusy, setBotBusy] = useState(false)
+  const [botError, setBotError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const liveServiceRef = useRef<LiveAudioService | null>(null)
+  const botPollRef = useRef<number | null>(null)
+
+  // The assistant bot counts as a capture method: once it has been started the
+  // student can begin the class without uploading a file, and the backend will
+  // record the meeting audio and generate the notes when the class ends.
+  const botActive =
+    !!botStatus?.found &&
+    botStatus.status !== 'failed' &&
+    botStatus.status !== 'stopped' &&
+    botStatus.status !== 'unsupported'
 
   useEffect(() => {
     liveServiceRef.current = new LiveAudioService(setLiveState)
 
     return () => {
       void liveServiceRef.current?.stop()
+      if (botPollRef.current) window.clearInterval(botPollRef.current)
     }
   }, [])
+
+  const stopBotPolling = () => {
+    if (botPollRef.current !== null) {
+      window.clearInterval(botPollRef.current)
+      botPollRef.current = null
+    }
+  }
+
+  const startBotPolling = (link: string) => {
+    stopBotPolling()
+    botPollRef.current = window.setInterval(async () => {
+      try {
+        const status = await classService.getBotStatus(link)
+        if (!status.found) {
+          stopBotPolling()
+          return
+        }
+        setBotStatus(status)
+        if (status.status && BOT_TERMINAL_STATUSES.includes(status.status)) {
+          stopBotPolling()
+        }
+      } catch {
+        // Transient network error — keep polling.
+      }
+    }, 3000)
+  }
+
+  const handleJoinBot = async () => {
+    const link = meetingLink.trim()
+    if (!link) {
+      setBotError('Paste the meeting link first.')
+      return
+    }
+    setBotBusy(true)
+    setBotError(null)
+    try {
+      const result = await classService.joinMeetingAsBot(link)
+      if (!result.botId) {
+        setBotStatus(null)
+        setBotError(result.detail)
+        return
+      }
+      setBotStatus({
+        found: true,
+        botId: result.botId,
+        link,
+        status: result.status,
+        detail: result.detail,
+        startedAt: null,
+        updatedAt: null,
+      })
+      startBotPolling(link)
+    } catch (e) {
+      setBotError(e instanceof Error ? e.message : 'Could not start the assistant bot.')
+    } finally {
+      setBotBusy(false)
+    }
+  }
+
+  const handleStopBot = async () => {
+    const link = meetingLink.trim()
+    stopBotPolling()
+    try {
+      await classService.stopMeetingBot(link)
+    } catch {
+      // Ignore — we still clear the local state.
+    }
+    setBotStatus(null)
+    setBotError(null)
+  }
 
   const handleStartLive = async () => {
     try {
@@ -70,8 +179,9 @@ export function JoinClassForm({ onJoin, isSubmitting }: JoinClassFormProps) {
     const next: Record<string, string> = {}
     if (!title.trim()) next.title = 'Class title is required.'
     if (!subject.trim()) next.subject = 'Subject is required.'
-    if (!file && liveState.status !== 'recording') {
-      next.session = 'Upload a recording or start a live capture session.'
+    if (!file && liveState.status !== 'recording' && !botActive) {
+      next.session =
+        'Upload a recording, start a live capture, or join with the assistant bot.'
     }
     setErrors(next)
     return Object.keys(next).length === 0
@@ -172,8 +282,9 @@ export function JoinClassForm({ onJoin, isSubmitting }: JoinClassFormProps) {
               {policy.platformName}
             </p>
             <p className="mt-1.5 text-muted">
-              Open the meeting in your browser, then click "Start Live Capture"
-              and select the meeting tab.
+              {policy.automatedJoinSupported
+                ? 'Use "Join with Assistant Bot" below — the assistant opens the meeting and asks the host to admit it.'
+                : 'Join this meeting yourself with your institute account, then upload the authorized recording.'}
             </p>
             {policy.accessControls.length > 0 && (
               <ul className="mt-2 list-disc space-y-0.5 pl-4 text-muted">
@@ -183,10 +294,62 @@ export function JoinClassForm({ onJoin, isSubmitting }: JoinClassFormProps) {
               </ul>
             )}
             <p className="mt-2 text-cyan">
-              Tip: Make sure to check "Share tab audio" when selecting the meeting tab.
+              Tip: For live capture, first join in your browser and enable "Share tab audio".
             </p>
           </div>
         )}
+
+        <div className="rounded-xl border border-primary/30 bg-primary/5 px-3.5 py-3">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-start gap-2">
+              <Bot className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+              <div>
+                <p className="text-sm font-medium text-white">Join with Assistant Bot</p>
+                <p className="mt-0.5 text-xs text-muted">
+                  The assistant opens the meeting in its own browser window, requests
+                  admission, then records the class so notes are generated when you end the session.
+                </p>
+              </div>
+            </div>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={handleJoinBot}
+              isLoading={botBusy}
+              disabled={!meetingLink.trim()}
+              className="shrink-0"
+            >
+              Join
+            </Button>
+          </div>
+
+          {botStatus && (
+            <div className="mt-2.5 flex items-start justify-between gap-3 rounded-lg border border-card-border bg-card/60 px-3 py-2">
+              <div>
+                <p className={cn('text-xs font-medium', describeBotStatus(botStatus.status).tone)}>
+                  {describeBotStatus(botStatus.status).label}
+                </p>
+                {botStatus.detail && (
+                  <p className="mt-0.5 text-[11px] text-muted">{botStatus.detail}</p>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={handleStopBot}
+                className="shrink-0 text-xs text-muted underline underline-offset-2 hover:text-white"
+              >
+                Leave
+              </button>
+            </div>
+          )}
+
+          {botError && (
+            <p className="mt-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+              {botError}
+            </p>
+          )}
+        </div>
 
         <div className="flex items-center gap-3 text-xs text-muted">
           <span className="h-px flex-1 bg-card-border" />

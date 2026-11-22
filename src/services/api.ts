@@ -259,11 +259,14 @@ export interface StartSessionInput {
 export interface StartedSession {
   session: ClassSession
   lectureId: string | null
+  /** True when the backend is capturing the meeting's audio for this class. */
+  recordingStarted: boolean
 }
 
 /**
- * Creates the class and, when a recording was provided, uploads it and lets the
- * backend queue processing. Returns the lecture id the Processing page polls.
+ * Creates the class. When a recording was provided it is uploaded and queued for
+ * processing; otherwise the backend starts capturing the meeting's system audio,
+ * which is turned into a lecture when the student ends the session.
  */
 export async function startSession(input: StartSessionInput): Promise<StartedSession> {
   const course = await request<CourseWire>('/classes', {
@@ -276,6 +279,8 @@ export async function startSession(input: StartSessionInput): Promise<StartedSes
   })
 
   let lectureId: string | null = null
+  let recordingStarted = false
+
   if (input.file) {
     const form = new FormData()
     form.append('courseId', course.id)
@@ -283,9 +288,23 @@ export async function startSession(input: StartSessionInput): Promise<StartedSes
     form.append('startProcessing', 'true')
     const created = await request<LectureCreated>('/lectures', { method: 'POST', body: form })
     lectureId = created.lecture.id
+  } else {
+    // No file was supplied: the assistant records the meeting audio on this
+    // machine and the lecture is built from it when the class ends.
+    try {
+      await startMeetingRecording(course.id)
+      recordingStarted = true
+    } catch (err) {
+      const detail = err instanceof ApiError ? err.message : 'Unknown error.'
+      throw new ApiError(
+        0,
+        `Could not start recording this class on this computer (${detail}). ` +
+          'Use "Upload File" or "Start Live Capture" instead.'
+      )
+    }
   }
 
-  return { session: toClassSession(course), lectureId }
+  return { session: toClassSession(course), lectureId, recordingStarted }
 }
 
 /** Exchanges an institute email + password for an access token. */
@@ -494,10 +513,60 @@ export function getMeetingPolicy(link?: string): Promise<MeetingPolicy> {
   return request<MeetingPolicy>(`/meetings/policy${query}`)
 }
 
-export function joinMeetingAsBot(link: string): Promise<{ message: string }> {
-  return request<{ message: string }>(`/meetings/join?link=${encodeURIComponent(link)}`, {
+/** Result of asking the assistant bot to join. `botId` is null when the
+ * platform does not support automated joining. */
+export interface BotJoinResult {
+  botId: string | null
+  status: string
+  detail: string
+}
+
+/** Live state of the assistant bot for a meeting link. */
+export interface BotStatus {
+  found: boolean
+  botId: string | null
+  link: string | null
+  status: string | null
+  detail: string | null
+  startedAt: string | null
+  updatedAt: string | null
+}
+
+export function joinMeetingAsBot(link: string): Promise<BotJoinResult> {
+  return request<BotJoinResult>(`/meetings/join?link=${encodeURIComponent(link)}`, {
     method: 'POST',
   })
+}
+
+export function getBotStatus(link: string): Promise<BotStatus> {
+  return request<BotStatus>(`/meetings/bot/status?link=${encodeURIComponent(link)}`)
+}
+
+export function stopMeetingBot(link: string): Promise<{ message: string }> {
+  return request<{ message: string }>(`/meetings/bot/stop?link=${encodeURIComponent(link)}`, {
+    method: 'POST',
+  })
+}
+
+/**
+ * Starts capturing the meeting's system audio for a class. The assistant bot
+ * plays the meeting through the machine's speakers, so the captured audio is
+ * what the class actually sounded like.
+ */
+export async function startMeetingRecording(courseId: string): Promise<void> {
+  await request<{ message: string }>(
+    `/meetings/recording/start?course_id=${encodeURIComponent(courseId)}`,
+    { method: 'POST' }
+  )
+}
+
+/**
+ * Stops the capture, turns the WAV into a lecture and queues it for processing.
+ * Returns the new lecture id that the Processing page polls.
+ */
+export async function stopMeetingRecording(): Promise<{ lectureId: string; courseId: string }> {
+  const created = await request<LectureCreated>('/meetings/recording/stop', { method: 'POST' })
+  return { lectureId: created.lecture.id, courseId: created.lecture.courseId }
 }
 
 // --------------------------------------------------------------------------- //
