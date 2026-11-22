@@ -10,6 +10,16 @@ import { LiveAudioService, type LiveAudioState } from '@/services/LiveAudioServi
 
 interface JoinClassFormProps {
   onJoin: (data: { title: string; subject: string; meetingLink: string; file: File | null }) => void
+  /**
+   * Called once the assistant has actually been admitted to the meeting. The
+   * page creates the class and starts recording the meeting audio, then shows
+   * the live session view. Resolves with an error message, or null on success.
+   */
+  onStartBotSession: (data: {
+    title: string
+    subject: string
+    meetingLink: string
+  }) => Promise<string | null>
   isSubmitting: boolean
 }
 
@@ -37,7 +47,7 @@ function describeBotStatus(status: string | null): { label: string; tone: string
   }
 }
 
-export function JoinClassForm({ onJoin, isSubmitting }: JoinClassFormProps) {
+export function JoinClassForm({ onJoin, onStartBotSession, isSubmitting }: JoinClassFormProps) {
   const [title, setTitle] = useState('')
   const [subject, setSubject] = useState('')
   const [meetingLink, setMeetingLink] = useState('')
@@ -51,6 +61,10 @@ export function JoinClassForm({ onJoin, isSubmitting }: JoinClassFormProps) {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const liveServiceRef = useRef<LiveAudioService | null>(null)
   const botPollRef = useRef<number | null>(null)
+  // Guards against starting the same bot session twice while polling.
+  const botStartTriggeredRef = useRef(false)
+  // Latest form values, so the 3s polling callback never uses stale input.
+  const formValuesRef = useRef({ title, subject, meetingLink })
 
   // The assistant bot counts as a capture method: once it has been started the
   // student can begin the class without uploading a file, and the backend will
@@ -70,6 +84,10 @@ export function JoinClassForm({ onJoin, isSubmitting }: JoinClassFormProps) {
     }
   }, [])
 
+  useEffect(() => {
+    formValuesRef.current = { title, subject, meetingLink }
+  }, [title, subject, meetingLink])
+
   const stopBotPolling = () => {
     if (botPollRef.current !== null) {
       window.clearInterval(botPollRef.current)
@@ -87,6 +105,26 @@ export function JoinClassForm({ onJoin, isSubmitting }: JoinClassFormProps) {
           return
         }
         setBotStatus(status)
+
+        // The moment the host admits the assistant, the class really begins:
+        // the page creates the class and starts recording the meeting audio,
+        // so ending the session yields notes, summary and class history.
+        if (status.status === 'admitted' && !botStartTriggeredRef.current) {
+          botStartTriggeredRef.current = true
+          stopBotPolling()
+          const values = formValuesRef.current
+          const error = await onStartBotSession({
+            title: values.title.trim(),
+            subject: values.subject.trim(),
+            meetingLink: link,
+          })
+          if (error) {
+            setBotError(error)
+            botStartTriggeredRef.current = false
+          }
+          return
+        }
+
         if (status.status && BOT_TERMINAL_STATUSES.includes(status.status)) {
           stopBotPolling()
         }
@@ -102,6 +140,18 @@ export function JoinClassForm({ onJoin, isSubmitting }: JoinClassFormProps) {
       setBotError('Paste the meeting link first.')
       return
     }
+    // The assistant starts the class for real once admitted, so the title and
+    // subject are required before it is launched.
+    if (!title.trim()) {
+      setErrors((prev) => ({ ...prev, title: 'Class title is required.' }))
+      return
+    }
+    if (!subject.trim()) {
+      setErrors((prev) => ({ ...prev, subject: 'Subject is required.' }))
+      return
+    }
+    botStartTriggeredRef.current = false
+    setErrors((prev) => ({ ...prev, title: '', subject: '' }))
     setBotBusy(true)
     setBotError(null)
     try {
@@ -131,6 +181,7 @@ export function JoinClassForm({ onJoin, isSubmitting }: JoinClassFormProps) {
   const handleStopBot = async () => {
     const link = meetingLink.trim()
     stopBotPolling()
+    botStartTriggeredRef.current = false
     try {
       await classService.stopMeetingBot(link)
     } catch {
@@ -306,8 +357,9 @@ export function JoinClassForm({ onJoin, isSubmitting }: JoinClassFormProps) {
               <div>
                 <p className="text-sm font-medium text-white">Join with Assistant Bot</p>
                 <p className="mt-0.5 text-xs text-muted">
-                  The assistant opens the meeting in its own browser window, requests
-                  admission, then records the class so notes are generated when you end the session.
+                  The assistant opens the meeting in its own browser window and requests
+                  admission. Once the host admits it, the class starts and the meeting audio
+                  is recorded automatically — end the session to get the notes and summary.
                 </p>
               </div>
             </div>

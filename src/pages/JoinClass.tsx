@@ -31,7 +31,47 @@ export default function JoinClass() {
     }
   }, [])
 
-  const handleJoin = async ({
+  // Creates the class and either uploads the recording or starts capturing the
+  // meeting's audio. The backend hands back the lecture id the Processing page
+  // polls (null until the class is ended when recording).
+  const beginSession = async ({
+    title,
+    subject,
+    meetingLink,
+    file,
+  }: {
+    title: string
+    subject: string
+    meetingLink: string
+    file: File | null
+  }): Promise<string | null> => {
+    setIsSubmitting(true)
+    setError(null)
+    try {
+      const started = await classService.startSession({ title, subject, meetingLink, file })
+      setSession(started.session)
+      setLectureId(started.lectureId)
+      setHasAudio(!!file)
+      setRecordingStarted(started.recordingStarted)
+      setMeetingLink(meetingLink.trim() || null)
+      setElapsed(0)
+
+      if (timerRef.current) clearInterval(timerRef.current)
+      timerRef.current = setInterval(() => setElapsed((e) => e + 1), 1000)
+      return null
+    } catch (e) {
+      const message =
+        e instanceof classService.ApiError
+          ? e.message
+          : 'Could not start this class session. Is the backend running?'
+      setError(message)
+      return message
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  const handleJoin = ({
     title,
     subject,
     meetingLink,
@@ -42,31 +82,21 @@ export default function JoinClass() {
     meetingLink: string
     file: File | null
   }) => {
-    setIsSubmitting(true)
-    setError(null)
-    try {
-      // Creates the class and either uploads the recording or starts capturing
-      // the meeting's audio. The backend hands back the lecture id the
-      // Processing page polls (null until the class is ended when recording).
-      const started = await classService.startSession({ title, subject, meetingLink, file })
-      setSession(started.session)
-      setLectureId(started.lectureId)
-      setHasAudio(!!file)
-      setRecordingStarted(started.recordingStarted)
-      setMeetingLink(meetingLink.trim() || null)
-      setElapsed(0)
-
-      timerRef.current = setInterval(() => setElapsed((e) => e + 1), 1000)
-    } catch (e) {
-      setError(
-        e instanceof classService.ApiError
-          ? e.message
-          : 'Could not start this class session. Is the backend running?'
-      )
-    } finally {
-      setIsSubmitting(false)
-    }
+    void beginSession({ title, subject, meetingLink, file })
   }
+
+  // Fired by the form once the assistant bot has actually been admitted: the
+  // class is created and system-audio recording starts, so ending the session
+  // produces the notes, summary and class history.
+  const handleStartBotSession = ({
+    title,
+    subject,
+    meetingLink,
+  }: {
+    title: string
+    subject: string
+    meetingLink: string
+  }) => beginSession({ title, subject, meetingLink, file: null })
 
   const handleEndClass = async () => {
     if (timerRef.current) clearInterval(timerRef.current)
@@ -130,7 +160,11 @@ export default function JoinClass() {
               {error}
             </div>
           )}
-          <JoinClassForm onJoin={handleJoin} isSubmitting={isSubmitting} />
+          <JoinClassForm
+            onJoin={handleJoin}
+            onStartBotSession={handleStartBotSession}
+            isSubmitting={isSubmitting}
+          />
         </div>
       ) : (
         <div className="mx-auto max-w-2xl py-6">
