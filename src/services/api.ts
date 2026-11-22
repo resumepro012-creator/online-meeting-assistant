@@ -12,6 +12,7 @@
 
 import type {
   Announcement,
+  ClassResults,
   ClassSession,
   ClassStatus,
   DashboardSummary,
@@ -225,16 +226,6 @@ export interface PipelineHealth {
   }
 }
 
-export interface ClassResults {
-  courseId: string
-  lectureId?: string
-  note?: LectureNote | null
-  announcements: Announcement[]
-  questions: { id: string; text: string; speaker?: string | null; sourceSeconds?: number | null }[]
-  actionItems?: { id: string; kind: string; text: string; dueAt?: string | null }[]
-  [key: string]: unknown
-}
-
 const toClassSession = (course: CourseWire): ClassSession => ({
   id: course.id,
   title: course.title,
@@ -299,7 +290,7 @@ export async function startSession(input: StartSessionInput): Promise<StartedSes
       throw new ApiError(
         0,
         `Could not start recording this class on this computer (${detail}). ` +
-          'Use "Upload File" or "Start Live Capture" instead.'
+          'Use "Upload File" instead or join with the assistant bot.'
       )
     }
   }

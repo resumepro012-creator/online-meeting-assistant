@@ -56,6 +56,7 @@ export interface Announcement {
   relatedClassId: string
   date: string // ISO
   deadline?: string // ISO, only if explicitly available
+  deadlineText?: string // human-readable deadline if available
 }
 
 // ---------- Processing ----------
@@ -78,4 +79,38 @@ export interface DashboardSummary {
   classesAttended: number
   notesGenerated: number
   importantAnnouncements: number
+}
+
+// ---------- Lecture results (full) ----------
+export interface Question {
+  id: string
+  text: string
+  speaker?: string | null
+  sourceSeconds?: number | null
+}
+
+export interface ActionItem {
+  id: string
+  kind: string
+  text: string
+  assignee?: string | null
+  dueAt?: string | null
+  dueText?: string | null
+  dueUncertain?: boolean
+  sourceSeconds?: number | null
+}
+
+export interface ClassResults {
+  courseId: string
+  lectureId?: string
+  note?: LectureNote | null
+  announcements: Announcement[]
+  questions: Question[]
+  actionItems?: ActionItem[]
+  pipeline?: {
+    sttMethod?: string | null
+    classifierMethod?: string | null
+    summarizerMethod?: string | null
+    segmentCount?: number
+  }
 }

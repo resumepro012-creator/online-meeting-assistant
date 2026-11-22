@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, useLocation, useParams } from 'react-router-dom'
-import { Calendar, Clock, Download, Copy, Check, ArrowLeft, Megaphone, ListChecks } from 'lucide-react'
+import { Calendar, Clock, Download, Copy, Check, ArrowLeft, Megaphone, ListChecks, HelpCircle, ClipboardList, FileText } from 'lucide-react'
 import { DashboardLayout } from '@/components/layout/DashboardLayout'
 import { Card } from '@/components/common/Card'
 import { Badge } from '@/components/common/Badge'
@@ -8,8 +8,8 @@ import { Button } from '@/components/common/Button'
 import { EmptyState } from '@/components/common/EmptyState'
 import { AnnouncementCard } from '@/components/announcements/AnnouncementCard'
 import * as classService from '@/services/classService'
-import type { Announcement, ClassSession, LectureNote } from '@/types'
-import { formatDate, noteToMarkdown, downloadNoteAsMarkdown } from '@/lib/utils'
+import type { ActionItem, Announcement, ClassResults, ClassSession, LectureNote, Question } from '@/types'
+import { formatDate, noteToMarkdown, downloadNoteAsMarkdown, downloadClassSummaryAsPdf } from '@/lib/utils'
 
 export default function LectureResults() {
   const { classId } = useParams<{ classId: string }>()
@@ -17,8 +17,12 @@ export default function LectureResults() {
   const [session, setSession] = useState<ClassSession | undefined>(location.state?.session)
   const [note, setNote] = useState<LectureNote | undefined>(location.state?.note)
   const [announcements, setAnnouncements] = useState<Announcement[]>(location.state?.announcements ?? [])
+  const [questions, setQuestions] = useState<Question[]>([])
+  const [actionItems, setActionItems] = useState<ActionItem[]>([])
+  const [fullResults, setFullResults] = useState<ClassResults | null>(null)
   const [loading, setLoading] = useState(!location.state?.note)
   const [copied, setCopied] = useState(false)
+  const [pdfGenerating, setPdfGenerating] = useState(false)
 
   useEffect(() => {
     if (location.state?.note || !classId) {
@@ -27,15 +31,17 @@ export default function LectureResults() {
     }
     let cancelled = false
     async function load() {
-      const [s, n, a] = await Promise.all([
+      const [s, results] = await Promise.all([
         classService.getClassById(classId!),
-        classService.getNoteByClassId(classId!),
-        classService.getAnnouncementsForClass(classId!),
+        classService.getClassResults(classId!),
       ])
       if (cancelled) return
       setSession(s)
-      setNote(n)
-      setAnnouncements(a)
+      setNote(results.note ?? undefined)
+      setAnnouncements(results.announcements)
+      setQuestions(results.questions ?? [])
+      setActionItems(results.actionItems ?? [])
+      setFullResults(results)
       setLoading(false)
     }
     load()
@@ -55,6 +61,23 @@ export default function LectureResults() {
   const handleDownload = () => {
     if (!note) return
     downloadNoteAsMarkdown(note)
+  }
+
+  const handleDownloadPdf = () => {
+    if (!session) return
+    const results: ClassResults = fullResults ?? {
+      courseId: session.id,
+      note: note ?? null,
+      announcements,
+      questions,
+      actionItems,
+    }
+    setPdfGenerating(true)
+    try {
+      downloadClassSummaryAsPdf(results, note?.title ?? session.title, session.subject)
+    } finally {
+      setPdfGenerating(false)
+    }
   }
 
   if (loading) {
@@ -100,7 +123,7 @@ export default function LectureResults() {
             )}
           </div>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button variant="secondary" size="sm" onClick={handleCopy}>
             {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
             {copied ? 'Copied' : 'Copy Notes'}
@@ -108,6 +131,10 @@ export default function LectureResults() {
           <Button variant="secondary" size="sm" onClick={handleDownload}>
             <Download className="h-3.5 w-3.5" />
             Download
+          </Button>
+          <Button variant="primary" size="sm" onClick={handleDownloadPdf} disabled={pdfGenerating}>
+            <FileText className="h-3.5 w-3.5" />
+            {pdfGenerating ? 'Generating…' : 'Download PDF'}
           </Button>
         </div>
       </div>
@@ -151,6 +178,51 @@ export default function LectureResults() {
               ))}
             </div>
           </Card>
+
+          {questions.length > 0 && (
+            <Card>
+              <h3 className="mb-3 flex items-center gap-2 text-base font-semibold text-white">
+                <HelpCircle className="h-4.5 w-4.5 text-primary" />
+                Questions Raised ({questions.length})
+              </h3>
+              <ul className="space-y-3">
+                {questions.map((q) => (
+                  <li key={q.id} className="flex gap-2.5 text-sm leading-relaxed text-white/85">
+                    <span className="mt-2 h-1 w-1 shrink-0 rounded-full bg-cyan" />
+                    <div>
+                      {q.speaker && <span className="font-semibold text-cyan">{q.speaker}: </span>}
+                      {q.text}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          )}
+
+          {actionItems.length > 0 && (
+            <Card>
+              <h3 className="mb-3 flex items-center gap-2 text-base font-semibold text-white">
+                <ClipboardList className="h-4.5 w-4.5 text-primary" />
+                Action Items ({actionItems.length})
+              </h3>
+              <ul className="space-y-3">
+                {actionItems.map((item) => (
+                  <li key={item.id} className="flex gap-2.5 text-sm leading-relaxed text-white/85">
+                    <span className="mt-2 h-1 w-1 shrink-0 rounded-full bg-primary" />
+                    <div>
+                      {item.assignee && <span className="font-semibold text-primary">[{item.assignee}] </span>}
+                      {item.text}
+                      {(item.dueAt || item.dueText) && (
+                        <span className="ml-2 rounded bg-amber-500/15 px-2 py-0.5 text-xs text-amber-300">
+                          Due: {item.dueAt ? formatDate(item.dueAt) : item.dueText}
+                        </span>
+                      )}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          )}
         </div>
 
         <div className="space-y-4">

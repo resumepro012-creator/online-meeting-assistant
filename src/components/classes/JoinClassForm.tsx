@@ -1,12 +1,11 @@
 import { useRef, useState, useEffect, type FormEvent } from 'react'
-import { Video, Link2, BookMarked, Upload, FileAudio, X, Info, ShieldAlert, Mic, StopCircle, Bot } from 'lucide-react'
+import { Video, Link2, BookMarked, Upload, FileAudio, Info, ShieldAlert, Bot } from 'lucide-react'
 import { Input } from '@/components/common/Input'
 import { Button } from '@/components/common/Button'
 import { Card } from '@/components/common/Card'
 import { cn } from '@/lib/utils'
 import * as classService from '@/services/classService'
 import type { MeetingPolicy, BotStatus } from '@/services/classService'
-import { LiveAudioService, type LiveAudioState } from '@/services/LiveAudioService'
 
 interface JoinClassFormProps {
   onJoin: (data: { title: string; subject: string; meetingLink: string; file: File | null }) => void
@@ -54,12 +53,10 @@ export function JoinClassForm({ onJoin, onStartBotSession, isSubmitting }: JoinC
   const [file, setFile] = useState<File | null>(null)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [policy, setPolicy] = useState<MeetingPolicy | null>(null)
-  const [liveState, setLiveState] = useState<LiveAudioState>({ status: 'idle', durationSeconds: 0 })
   const [botStatus, setBotStatus] = useState<BotStatus | null>(null)
   const [botBusy, setBotBusy] = useState(false)
   const [botError, setBotError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const liveServiceRef = useRef<LiveAudioService | null>(null)
   const botPollRef = useRef<number | null>(null)
   // Guards against starting the same bot session twice while polling.
   const botStartTriggeredRef = useRef(false)
@@ -76,10 +73,7 @@ export function JoinClassForm({ onJoin, onStartBotSession, isSubmitting }: JoinC
     botStatus.status !== 'unsupported'
 
   useEffect(() => {
-    liveServiceRef.current = new LiveAudioService(setLiveState)
-
     return () => {
-      void liveServiceRef.current?.stop()
       if (botPollRef.current) window.clearInterval(botPollRef.current)
     }
   }, [])
@@ -191,48 +185,13 @@ export function JoinClassForm({ onJoin, onStartBotSession, isSubmitting }: JoinC
     setBotError(null)
   }
 
-  const handleStartLive = async () => {
-    try {
-      setErrors((prev) => ({ ...prev, session: '' }))
-      setFile(null)
-      await liveServiceRef.current?.start()
-    } catch (err) {
-      console.error('Live capture failed:', err)
-      const message =
-        err instanceof Error ? err.message : 'Could not start live capture'
-
-      setLiveState({
-        status: 'error',
-        durationSeconds: 0,
-        error: message,
-      })
-    }
-  }
-
-  const handleStopLive = async () => {
-    const recordedFile = await liveServiceRef.current?.stop(
-      `live_${Date.now()}.webm`,
-    )
-
-    if (!recordedFile) {
-      setErrors((prev) => ({
-        ...prev,
-        session: 'No audio was captured. Make sure "Share tab audio" was enabled.',
-      }))
-      return null
-    }
-
-    setFile(recordedFile)
-    return recordedFile
-  }
-
   const validate = () => {
     const next: Record<string, string> = {}
     if (!title.trim()) next.title = 'Class title is required.'
     if (!subject.trim()) next.subject = 'Subject is required.'
-    if (!file && liveState.status !== 'recording' && !botActive) {
+    if (!file && !botActive) {
       next.session =
-        'Upload a recording, start a live capture, or join with the assistant bot.'
+        'Upload a recording or join with the assistant bot.'
     }
     setErrors(next)
     return Object.keys(next).length === 0
@@ -251,33 +210,8 @@ export function JoinClassForm({ onJoin, onStartBotSession, isSubmitting }: JoinC
     }
   }
 
-  const handleSubmit = async (e: FormEvent) => {
+  const handleSubmit = (e: FormEvent) => {
     e.preventDefault()
-
-    if (liveState.status === 'recording') {
-      if (!title.trim()) {
-        setErrors({ title: 'Class title is required.' })
-        return
-      }
-
-      if (!subject.trim()) {
-        setErrors({ subject: 'Subject is required.' })
-        return
-      }
-
-      const recordedFile = await handleStopLive()
-
-      if (recordedFile) {
-        onJoin({
-          title,
-          subject,
-          meetingLink,
-          file: recordedFile,
-        })
-      }
-
-      return
-    }
 
     if (!validate()) return
 
@@ -287,12 +221,6 @@ export function JoinClassForm({ onJoin, onStartBotSession, isSubmitting }: JoinC
       meetingLink,
       file,
     })
-  }
-
-  const formatDuration = (seconds: number) => {
-    const mins = Math.floor(seconds / 60)
-    const secs = seconds % 60
-    return `${mins}:${secs.toString().padStart(2, '0')}`
   }
 
   return (
@@ -345,7 +273,7 @@ export function JoinClassForm({ onJoin, onStartBotSession, isSubmitting }: JoinC
               </ul>
             )}
             <p className="mt-2 text-cyan">
-              Tip: For live capture, first join in your browser and enable "Share tab audio".
+              Tip: Use "Join with Assistant Bot" for live classes, or "Upload File" for a previously recorded lecture.
             </p>
           </div>
         )}
@@ -405,76 +333,37 @@ export function JoinClassForm({ onJoin, onStartBotSession, isSubmitting }: JoinC
 
         <div className="flex items-center gap-3 text-xs text-muted">
           <span className="h-px flex-1 bg-card-border" />
-          choose capture method
+          or upload a recording
           <span className="h-px flex-1 bg-card-border" />
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
-            <div>
-              <p className="mb-1.5 text-sm font-medium text-white/85">
-                Live Capture
-              </p>
-              {liveState.status === 'recording' ? (
-                <div className="flex flex-col items-center gap-2 rounded-xl border border-primary/50 bg-primary/10 px-4 py-6 text-center">
-                  <div className="relative">
-                    <StopCircle className="h-5 w-5 animate-pulse text-primary" />
-                    <span className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-red-500" />
-                  </div>
-                  <span className="text-sm font-medium text-white">
-                    {`Recording: ${formatDuration(liveState.durationSeconds)}`}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={handleStopLive}
-                    className="mt-1 text-xs text-primary underline underline-offset-2 hover:text-primary/80"
-                  >
-                    Stop & Use Recording
-                  </button>
-                </div>
-              ) : (
-                <button
-                  type="button"
-                  onClick={handleStartLive}
-                  disabled={false}
-                  className="flex w-full flex-col items-center gap-2 rounded-xl border border-dashed border-card-border bg-card/40 px-4 py-6 text-center transition-colors hover:border-primary/50 disabled:opacity-50"
-                >
-                  <Mic className="h-5 w-5 text-muted" />
-                  <span className="text-sm text-muted">
-                    Start Live Capture
-                  </span>
-                </button>
-              )}
-            </div>
-
-          <div>
-            <p className="mb-1.5 text-sm font-medium text-white/85">Upload File</p>
-            {!file ? (
+        <div>
+          <p className="mb-1.5 text-sm font-medium text-white/85">Upload File</p>
+          {!file ? (
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="flex w-full flex-col items-center gap-2 rounded-xl border border-dashed border-card-border bg-card/40 px-4 py-6 text-center transition-colors hover:border-primary/50"
+            >
+              <Upload className="h-5 w-5 text-muted" />
+              <span className="text-sm text-muted">Select audio/transcript</span>
+            </button>
+          ) : (
+            <div className="flex flex-col items-center gap-2 rounded-xl border border-card-border bg-card/60 px-4 py-6 text-center">
+              <FileAudio className="h-5 w-5 text-primary" />
+              <span className="w-full truncate text-sm text-white">{file.name}</span>
               <button
                 type="button"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={liveState.status === 'recording'}
-                className="flex w-full flex-col items-center gap-2 rounded-xl border border-dashed border-card-border bg-card/40 px-4 py-6 text-center transition-colors hover:border-primary/50 disabled:opacity-50"
+                onClick={() => {
+                  setFile(null)
+                  if (fileInputRef.current) fileInputRef.current.value = ''
+                }}
+                className="mt-1 text-xs text-red-400 underline underline-offset-2 hover:text-red-300"
               >
-                <Upload className="h-5 w-5 text-muted" />
-                <span className="text-sm text-muted">Select audio/transcript</span>
+                Remove
               </button>
-            ) : (
-              <div className="flex flex-col items-center gap-2 rounded-xl border border-card-border bg-card/60 px-4 py-6 text-center">
-                <FileAudio className="h-5 w-5 text-primary" />
-                <span className="w-full truncate text-sm text-white">{file.name}</span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setFile(null)
-                    if (fileInputRef.current) fileInputRef.current.value = ''
-                  }}
-                  className="mt-1 text-xs text-red-400 underline underline-offset-2 hover:text-red-300"
-                >
-                  Remove
-                </button>
-              </div>
-            )}
-          </div>
+            </div>
+          )}
         </div>
 
         <input
@@ -486,14 +375,12 @@ export function JoinClassForm({ onJoin, onStartBotSession, isSubmitting }: JoinC
         />
 
         {errors.session && <p className="text-xs text-red-400">{errors.session}</p>}
-        {liveState.error && <p className="text-xs text-red-400">{liveState.error}</p>}
 
         <div className="flex items-start gap-2 rounded-xl border border-cyan/25 bg-cyan/10 px-3.5 py-2.5 text-xs text-cyan">
           <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
           <p>
-            {liveState.status === 'recording'
-              ? 'Audio is being captured from your selected meeting tab. Do not close the meeting tab while recording.'
-              : 'Open your meeting first, then click "Start Live Capture", select the meeting tab, and enable "Share tab audio".'}
+            The assistant bot captures the meeting audio automatically. Use "Upload File" for
+            a previously recorded lecture or transcript.
           </p>
         </div>
 
@@ -504,7 +391,7 @@ export function JoinClassForm({ onJoin, onStartBotSession, isSubmitting }: JoinC
           fullWidth
           isLoading={isSubmitting}
         >
-          {liveState.status === 'recording' ? 'Stop & Join Class' : 'Join Class'}
+          Join Class
         </Button>
       </form>
     </Card>

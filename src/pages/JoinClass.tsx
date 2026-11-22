@@ -125,7 +125,7 @@ export default function JoinClass() {
       if (!finalLectureId) {
         setError(
           'No recording was captured for this class, so there is nothing to process. ' +
-            'Start a session and upload an audio file/transcript or use live capture.'
+            'Start a session and upload an audio file/transcript or join with the assistant bot.'
         )
         setIsEnding(false)
         return

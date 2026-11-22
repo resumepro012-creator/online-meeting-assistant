@@ -28,9 +28,12 @@ from __future__ import annotations
 
 import importlib.util
 import logging
+import tempfile
 import wave
 from dataclasses import dataclass, field
 from pathlib import Path
+
+import numpy as np
 
 from app.core.config import settings
 from app.ml.transcript_io import ParsedTranscript, RawSegment, load_transcript
@@ -121,6 +124,56 @@ def transcribe_audio(path: Path) -> TranscriptionResult:
     return _transcribe_with_faster_whisper(path)
 
 
+def _normalize_wav_audio(path: Path) -> Path:
+    """Boost the volume of a WAV file so quiet recordings are still transcribed.
+
+    System-audio loopback captures (e.g. from the assistant bot's speaker) often
+    land well below the level the VAD filter expects, so faster-whisper reports
+    "no speech detected". This normalises the audio to a target RMS level and
+    writes the boosted PCM to a temporary WAV. Non-WAV inputs are returned
+    unchanged (faster-whisper handles those through ffmpeg).
+    """
+    if path.suffix.lower() != ".wav":
+        return path
+    try:
+        with wave.open(str(path), "rb") as src:
+            params = src.getparams()
+            frames = src.readframes(src.getnframes())
+        if not frames or params.sampwidth != 2:
+            return path
+        audio = np.frombuffer(frames, dtype=np.int16).astype(np.float32)
+        if audio.size == 0:
+            return path
+        peak = float(np.max(np.abs(audio)))
+        rms = float(np.sqrt(np.mean(audio**2)))
+        if peak <= 0:
+            return path
+        target_rms = 0.18 * 32767.0
+        if rms >= target_rms:
+            return path
+        gain = min(target_rms / max(rms, 1.0), 32767.0 / max(peak, 1.0))
+        if gain <= 1.0:
+            return path
+        boosted = np.clip(audio * gain, -32768.0, 32767.0).astype(np.int16)
+        tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+        tmp.close()
+        with wave.open(tmp.name, "wb") as dst:
+            dst.setparams(params)
+            dst.writeframes(boosted.tobytes())
+        logger.info(
+            "Normalised quiet WAV (peak %.0f, rms %.0f -> rms %.0f, gain %.1fx): %s",
+            peak,
+            rms,
+            target_rms,
+            gain,
+            path.name,
+        )
+        return Path(tmp.name)
+    except (wave.Error, OSError, ValueError) as exc:
+        logger.warning("Audio normalisation failed for %s: %s", path.name, exc)
+        return path
+
+
 def _transcribe_with_faster_whisper(path: Path) -> TranscriptionResult:
     from faster_whisper import WhisperModel  # imported lazily: heavy dependency
 
@@ -128,12 +181,14 @@ def _transcribe_with_faster_whisper(path: Path) -> TranscriptionResult:
     logger.info("Loading faster-whisper model '%s' (first run downloads weights)…", model_size)
     model = WhisperModel(model_size, device="cpu", compute_type="int8")
 
-    logger.info("Transcribing %s", path.name)
+    work_path = _normalize_wav_audio(path)
+
+    logger.info("Transcribing %s", work_path.name)
     raw_segments, info = model.transcribe(
-        str(path),
+        str(work_path),
         beam_size=5,
-        vad_filter=True,  # skip silence so empty recordings produce no segments
-        vad_parameters={"min_silence_duration_ms": 700},
+        vad_filter=True,
+        vad_parameters={"min_silence_duration_ms": 300},
     )
 
     segments: list[RawSegment] = []
@@ -142,6 +197,27 @@ def _transcribe_with_faster_whisper(path: Path) -> TranscriptionResult:
         if not text:
             continue
         segments.append(RawSegment(text=text, start=float(seg.start), end=float(seg.end)))
+
+    if not segments:
+        logger.warning(
+            "VAD filtered out all segments for %s; retrying without VAD…", work_path.name
+        )
+        raw_segments, info = model.transcribe(
+            str(work_path),
+            beam_size=5,
+            vad_filter=False,
+        )
+        for seg in raw_segments:
+            text = (seg.text or "").strip()
+            if not text:
+                continue
+            segments.append(RawSegment(text=text, start=float(seg.start), end=float(seg.end)))
+
+    if work_path != path:
+        try:
+            work_path.unlink(missing_ok=True)
+        except OSError:
+            pass
 
     duration = getattr(info, "duration", None)
     return TranscriptionResult(
